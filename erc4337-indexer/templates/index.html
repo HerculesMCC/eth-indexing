@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ERC-4337 UserOps Explorer</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6e56cf;
+            --secondary: #00ff9d;
+            --background: #0a0b0d;
+            --surface: #16181d;
+            --text: #ffffff;
+            --text-secondary: #a1a1aa;
+        }
+
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--background);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            color: var(--secondary);
+            font-size: 2.5em;
+            margin-bottom: 1em;
+            text-shadow: 0 0 10px rgba(0, 255, 157, 0.3);
+        }
+
+        .filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        input, select, button {
+            background: var(--surface);
+            border: 1px solid var(--primary);
+            color: var(--text);
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-family: 'Space Grotesk', sans-serif;
+            transition: all 0.3s ease;
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            min-width: 120px;
+        }
+
+        button:hover {
+            background: var(--secondary);
+            color: var(--background);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 255, 157, 0.3);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-top: 20px;
+            background: var(--surface);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(110, 86, 207, 0.2);
+        }
+
+        th {
+            background-color: rgba(110, 86, 207, 0.1);
+            color: var(--secondary);
+            font-weight: bold;
+        }
+
+        tr:hover {
+            background: rgba(110, 86, 207, 0.1);
+        }
+
+        .success-badge {
+            background: rgba(0, 255, 157, 0.2);
+            color: var(--secondary);
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.9em;
+        }
+
+        .failed-badge {
+            background: rgba(255, 0, 76, 0.2);
+            color: #ff004c;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.9em;
+        }
+
+        .hash-cell {
+            font-family: monospace;
+            color: var(--primary);
+        }
+
+        .pagination {
+            margin-top: 30px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #currentPage {
+            color: var(--secondary);
+            font-weight: bold;
+        }
+
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        /* Animation pour le chargement */
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 ERC-4337 UserOperations Explorer - KR</h1>
+        
+        <div class="filters">
+            <input type="text" id="sender" placeholder="🔍 Filter by sender">
+            <input type="text" id="paymaster" placeholder="💰 Filter by paymaster">
+            <select id="success">
+                <option value="">All status</option>
+                <option value="true">✅ Success</option>
+                <option value="false">❌ Failed</option>
+            </select>
+            <button onclick="loadUserOps()">Filter</button>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>User Op Hash</th>
+                    <th>Sender</th>
+                    <th>Paymaster</th>
+                    <th>Status</th>
+                    <th>Gas Cost</th>
+                    <th>Block</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody id="userOpsTable">
+            </tbody>
+        </table>
+
+        <div class="pagination">
+            <button onclick="previousPage()">← Previous</button>
+            <span id="currentPage">Page 1</span>
+            <button onclick="nextPage()">Next →</button>
+        </div>
+    </div>
+
+    <div class="loading" id="loading">
+        <svg width="50" height="50" viewBox="0 0 50 50">
+            <circle cx="25" cy="25" r="20" fill="none" stroke="var(--secondary)" stroke-width="5">
+                <animate attributeName="stroke-dasharray" from="0 150" to="130 150" dur="1.5s" repeatCount="indefinite"/>
+                <animate attributeName="stroke-dashoffset" from="0" to="-130" dur="1.5s" repeatCount="indefinite"/>
+            </circle>
+        </svg>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        const loading = document.getElementById('loading');
+        
+        function loadUserOps() {
+            loading.classList.add('active');
+            const sender = document.getElementById('sender').value;
+            const paymaster = document.getElementById('paymaster').value;
+            const success = document.getElementById('success').value;
+            
+            let url = `/api/userops?page=${currentPage}`;
+            if (sender) url += `&sender=${sender}`;
+            if (paymaster) url += `&paymaster=${paymaster}`;
+            if (success) url += `&success=${success}`;
+
+            axios.get(url)
+                .then(response => {
+                    const tbody = document.getElementById('userOpsTable');
+                    tbody.innerHTML = '';
+                    
+                    response.data.forEach(op => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td class="hash-cell">${shortenHash(op.userOpHash)}</td>
+                            <td class="hash-cell">${shortenHash(op.sender)}</td>
+                            <td class="hash-cell">${op.paymaster ? shortenHash(op.paymaster) : '-'}</td>
+                            <td><span class="${op.success ? 'success-badge' : 'failed-badge'}">${op.success ? 'SUCCESS' : 'FAILED'}</span></td>
+                            <td>${formatGas(op.actualGasCost)}</td>
+                            <td>${op.blockNumber}</td>
+                            <td>${formatDate(op.timestamp)}</td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                })
+                .catch(error => console.error('Error:', error))
+                .finally(() => loading.classList.remove('active'));
+        }
+
+        function shortenHash(hash) {
+            if (!hash) return '-';
+            return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
+        }
+
+        function formatGas(gas) {
+            return `${(gas / 1e9).toFixed(4)} ETH`;
+        }
+
+        function formatDate(timestamp) {
+            return new Date(timestamp * 1000).toLocaleString();
+        }
+
+        function previousPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                document.getElementById('currentPage').textContent = `Page ${currentPage}`;
+                loadUserOps();
+            }
+        }
+
+        function nextPage() {
+            currentPage++;
+            document.getElementById('currentPage').textContent = `Page ${currentPage}`;
+            loadUserOps();
+        }
+
+        // Load initial data
+        loadUserOps();
+    </script>
+</body>
+</html>
